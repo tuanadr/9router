@@ -12,14 +12,28 @@ export {
 } from "./ttsProviders/index.js";
 
 // ── Response Formatter (DRY) ───────────────────────────────────
-function createTtsResponse(base64Audio, format, responseFormat) {
+export function createTtsResponse(resultOrBase64Audio, formatOrResponseFormat, maybeResponseFormat) {
+  const result =
+    typeof resultOrBase64Audio === "object" && resultOrBase64Audio !== null
+      ? resultOrBase64Audio
+      : { base64: resultOrBase64Audio, format: formatOrResponseFormat };
+  const responseFormat =
+    typeof resultOrBase64Audio === "object" && resultOrBase64Audio !== null
+      ? formatOrResponseFormat
+      : maybeResponseFormat;
+  const base64Audio = result.base64;
+  const format = result.format;
   const audioBuffer = Buffer.from(base64Audio, "base64");
 
   // JSON format: return base64 encoded audio
   if (responseFormat === "json") {
+    const body = { audio: base64Audio, format };
+    if (Array.isArray(result.word_boundaries)) {
+      body.word_boundaries = result.word_boundaries;
+    }
     return {
       success: true,
-      response: new Response(JSON.stringify({ audio: base64Audio, format }), {
+      response: new Response(JSON.stringify(body), {
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
@@ -48,7 +62,16 @@ function createTtsResponse(base64Audio, format, responseFormat) {
  *
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleTtsCore({ provider, model, input, credentials, responseFormat = "mp3", language }) {
+export async function handleTtsCore({
+  provider,
+  model,
+  input,
+  credentials,
+  responseFormat = "mp3",
+  language,
+  wordBoundaries = false,
+  sentenceBoundaries = false,
+}) {
   if (!input?.trim()) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
   }
@@ -57,15 +80,19 @@ export async function handleTtsCore({ provider, model, input, credentials, respo
     // Special-case adapters (google-tts, edge-tts, local-device, elevenlabs, openai, openrouter, gemini)
     const adapter = getTtsAdapter(provider);
     if (adapter) {
-      const result = await adapter.synthesize(input.trim(), model, credentials, responseFormat, { language });
+      const result = await adapter.synthesize(input.trim(), model, credentials, responseFormat, {
+        language,
+        wordBoundaries,
+        sentenceBoundaries,
+      });
       // Adapter may return a full {success, response} (legacy) or {base64, format}
       if (result.success !== undefined) return result;
-      return createTtsResponse(result.base64, result.format, responseFormat);
+      return createTtsResponse(result, responseFormat);
     }
 
     // Generic config-driven (hyperbolic, deepgram, nvidia, huggingface, inworld, cartesia, playht, coqui, tortoise, qwen, ...)
     const result = await synthesizeViaConfig(provider, input.trim(), model, credentials);
-    if (result) return createTtsResponse(result.base64, result.format, responseFormat);
+    if (result) return createTtsResponse(result, responseFormat);
 
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support TTS via this route.`);
   } catch (err) {
