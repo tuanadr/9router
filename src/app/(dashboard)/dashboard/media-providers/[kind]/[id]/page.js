@@ -63,6 +63,13 @@ function toImagePreviewSrc(value) {
   return `data:image/png;base64,${trimmed}`;
 }
 
+function buildSameOriginApiHeaders(apiKey, baseHeaders = {}) {
+  const headers = { ...baseHeaders };
+  // Keep the browser's Basic Auth header intact when the dashboard is behind Traefik.
+  if (apiKey) headers["x-api-key"] = apiKey;
+  return headers;
+}
+
 // Config-driven example defaults per kind
 const KIND_EXAMPLE_CONFIG = {
   webSearch: {
@@ -184,8 +191,7 @@ function EmbeddingExampleCard({ providerId, customAlias }) {
     setResult(null);
     const start = Date.now();
     try {
-      const headers = { "Content-Type": "application/json" };
-      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      const headers = buildSameOriginApiHeaders(apiKey, { "Content-Type": "application/json" });
       const res = await fetch("/api/v1/embeddings", {
         method: "POST",
         headers,
@@ -550,8 +556,7 @@ function TtsExampleCard({ providerId }) {
     setJsonResponse(null);
     const start = Date.now();
     try {
-      const headers = { "Content-Type": "application/json" };
-      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      const headers = buildSameOriginApiHeaders(apiKey, { "Content-Type": "application/json" });
       const url = `/api/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""}`;
       const res = await fetch(url, {
         method: "POST",
@@ -1026,8 +1031,7 @@ function GenericExampleCard({ providerId, kind }) {
     if (binaryImageUrl) { try { URL.revokeObjectURL(binaryImageUrl); } catch {} setBinaryImageUrl(""); }
     const start = Date.now();
     try {
-      const headers = { "Content-Type": "application/json" };
-      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      const headers = buildSameOriginApiHeaders(apiKey, { "Content-Type": "application/json" });
       if (pinnedConnectionId) headers["x-connection-id"] = pinnedConnectionId;
       if (useStreaming) headers["Accept"] = "text/event-stream";
       const body = { ...requestBody, model: modelFull };
@@ -1503,8 +1507,7 @@ function SttExampleCard({ providerId }) {
       if (allowedParams.includes("temperature") && temperature) fd.append("temperature", temperature);
       if (allowedParams.includes("prompt") && prompt) fd.append("prompt", prompt);
 
-      const headers = {};
-      if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+      const headers = buildSameOriginApiHeaders(apiKey);
       const res = await fetch("/api/v1/audio/transcriptions", { method: "POST", headers, body: fd });
       setLatency(Date.now() - start);
       const ct = res.headers.get("content-type") || "";
